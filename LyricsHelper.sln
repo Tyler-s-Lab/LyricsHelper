@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35828.75 d17.13
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LyricsHelper", "LyricsHelper\LyricsHelper.csproj", "{A83AFDB5-38EB-4321-8642-D19947629ADD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A83AFDB5-38EB-4321-8642-D19947629ADD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A83AFDB5-38EB-4321-8642-D19947629ADD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A83AFDB5-38EB-4321-8642-D19947629ADD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A83AFDB5-38EB-4321-8642-D19947629ADD}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {B808EB3D-3CE8-4DFF-BB9F-A15868FBD6E5}
+	EndGlobalSection
+EndGlobal
