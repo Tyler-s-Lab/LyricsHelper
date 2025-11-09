@@ -7,11 +7,15 @@
         mc:Ignorable="d"
         Title="MainWindow" SizeToContent="WidthAndHeight">
     <TabControl MinWidth="400" MinHeight="300">
-        <TabItem Header="转假名">
-            <Rectangle Fill="#FF6CF9F6" AllowDrop="True" Drop="TabItem_Drop_ToKANA"/>
+        <TabItem Header="提取全部注音">
+            <Grid Background="#FF25FFAA" AllowDrop="True" Drop="TabItem_Drop_ToKANA">
+                <Label Content="Drop .docx file here" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+            </Grid>
         </TabItem>
         <TabItem Header="移除多余注音">
-            <TextBox IsReadOnly="True"/>
+            <Grid Background="#FFFFC629" AllowDrop="True" Drop="TabItem_Drop_Clear">
+                <Label Content="Drop .docx file here" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+            </Grid>
         </TabItem>
     </TabControl>
 </Window>

@@ -13,27 +13,6 @@ namespace LyricsHelper;
 public partial class MainWindow : Window {
 	public MainWindow() {
 		InitializeComponent();
-
-
-
-		/*
-		string p = Path.GetDirectoryName(paths[0]) ?? "";
-		XDocument xml = new(new XElement(
-			"Items",
-			paths.Select(path => {
-				string key = Path.GetRandomFileName();
-				string val = Path.GetRelativePath(p, path);
-				File.Move(path, Path.Combine(p, key + ".bin"));
-				return new XElement(
-					"i",
-					new XAttribute("Key", key),
-					new XAttribute("Val", val)
-				);
-			})
-		));
-		using FileStream stream = new(GetAvailableNewPath(p, "List", ".txt"), FileMode.CreateNew);
-		xml.Save(stream);
-		*/
 	}
 
 	private async void TabItem_Drop_ToKANA(object sender, DragEventArgs e) {
@@ -49,7 +28,7 @@ public partial class MainWindow : Window {
 		return;
 	}
 
-	private void ToKana(string[] paths) {
+	private static void ToKana(string[] paths) {
 		string res = "";
 		foreach (string path in paths) {
 			try {
@@ -123,13 +102,21 @@ public partial class MainWindow : Window {
 			catch (Exception ex) {
 				res += ex.Message;
 			}
+			App.Current.Dispatcher.Invoke(new Action(() => {
+				var wint = new WindowText {
+					Text = res
+				};
+				wint.ShowDialog();
+			}));
 		}
-		App.Current.Dispatcher.Invoke(new Action(() => {
-			var wint = new WindowText {
-				Text = res
-			};
-			wint.ShowDialog();
-		}));
+		return;
+	}
+
+	private async void TabItem_Drop_Clear(object sender, DragEventArgs e) {
+		if (!e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetData(DataFormats.FileDrop) is not string[] paths) {
+			return;
+		}
+		await RubyCleanerForJapanese.TryProcessFilesAsync(paths);
 		return;
 	}
 }
