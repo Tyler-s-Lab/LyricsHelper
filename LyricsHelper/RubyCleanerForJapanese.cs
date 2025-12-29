@@ -1,68 +1,31 @@
 ﻿using SharpCompress.Archives;
 using SharpCompress.Archives.Zip;
 using SharpCompress.Common;
-using SharpCompress.Compressors.ADC;
 using System.IO;
-using System.Windows.Documents;
 using System.Xml.Linq;
 
 namespace LyricsHelper {
 	internal static class RubyCleanerForJapanese {
 
-		internal static async Task<string?> TryProcessFilesAsync(string[] paths) {
-			return await Task.Run(() => { return TryProccessFiles(paths); });
+		internal static async Task<string> TryProcess(string[] paths) {
+			string err = "";
+			try {
+				var res = await OfficeWordDocProc.ModifyFilesAsync(paths, ProcessXml);
+				err = string.Join("\n", res);
+			}
+			catch (Exception ex) {
+				err = ex.Message;
+			}
+			return err;
 		}
 
-		static string? TryProccessFiles(string[] paths) {
-			foreach (var path in paths) {
-				try {
-					ProcessFile(path);
-				}
-				catch { }
-			}
-			return null;
-		}
-
-		static void ProcessFile(string path) {
-			if (!Path.GetExtension(path).Equals(".docx", StringComparison.OrdinalIgnoreCase)) {
-				throw new Exception("no0");
-			}
-			//if (!ArchiveFactory.IsArchive(path, out ArchiveType? archiveType) || archiveType != ArchiveType.Zip) {
-			//	throw new Exception("no1");
-			//}
-			using FileStream fileStream = new(path, FileMode.Open, FileAccess.Read);
-			using IArchive archive = ArchiveFactory.Open(fileStream);
-			if (archive is not ZipArchive zip) {
-				throw new Exception("no2");
-			}
-			var docEntries = zip.Entries.Where(x => x.Key == @"word/document.xml");
-			if (docEntries.Count() != 1) {
-				throw new Exception("no3");
-			}
-			var docEntry = docEntries.First();
-			using var docStream = docEntry.OpenEntryStream();
-			var new_xml = ProcessXml(docStream);
-			if (new_xml == null) {
-				return;
-			}
-			zip.RemoveEntry(docEntry);
-
-			using MemoryStream memoryStream = new();
-			new_xml.Save(memoryStream);
-			zip.AddEntry(@"word/document.xml", memoryStream, true);
-
-			using FileStream fileStream1 = new(Path.ChangeExtension(path, ".C.docx"), FileMode.CreateNew, FileAccess.ReadWrite);
-			zip.SaveTo(fileStream1);
-		}
-
-		static XDocument? ProcessXml(Stream docStream) {
-			XDocument xml = XDocument.Load(docStream);
+		static ValueTuple<XContainer, string> ProcessXml(string path, XContainer xml) {
 			XNamespace w = @"http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 			if (xml.Element(w + "document") is not XElement document) {
-				return null;
+				throw new Exception("XML not including w:document");
 			}
 			if (document.Element(w + "body") is not XElement body) {
-				return null;
+				throw new Exception("XML not including w:body");
 			}
 			var paragraphs = body.Elements(w + "p");
 
@@ -143,7 +106,7 @@ namespace LyricsHelper {
 
 				paragraph.ReplaceNodes(newRuns);
 			}
-			return xml;
+			return (xml, Path.ChangeExtension(path, ".C"));
 		}
 
 		static List<RubySegment> GetRubySegments(List<TextSegment> segs, string rubyText) {
