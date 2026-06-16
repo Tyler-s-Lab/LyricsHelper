@@ -13,7 +13,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="LyricsHelper.ico" />
+    <Content Include="LyricsHelper.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
