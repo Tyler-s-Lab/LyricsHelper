@@ -6,7 +6,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>LyricsHelper.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="LyricsHelper.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="SharpCompress" Version="0.39.0" />
