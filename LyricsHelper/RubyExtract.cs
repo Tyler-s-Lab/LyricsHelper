@@ -1,4 +1,5 @@
 ﻿using System.Xml.Linq;
+using static LyricsHelper.CharHelper;
 
 namespace LyricsHelper {
 	internal static class RubyExtract {
@@ -28,10 +29,10 @@ namespace LyricsHelper {
 			foreach (var paragraph in paragraphs) {
 				var runs = paragraph.Elements(w + "r");
 				foreach (var run in runs) {
-					bool isMistack = false;
+					bool isMistake = false; // 带颜色的Ruby表明读音并非正确 + 包含平假名以外的ruby
 					if (run.Element(w + "rPr") is XElement runPreference) {
 						if (runPreference.Element(w + "color") != null) {
-							isMistack = true;
+							isMistake = true;
 						}
 					}
 					if (run.Element(w + "t") is XElement text) {
@@ -40,7 +41,12 @@ namespace LyricsHelper {
 					else if (run.Element(w + "ruby") is XElement ruby) {
 						var rubyText = ruby.Element(w + "rt")?.Element(w + "r")?.Element(w + "t");
 						var rubyBase = ruby.Element(w + "rubyBase")?.Element(w + "r")?.Element(w + "t");
-						if (isMistack) {
+
+						if (rubyText != null) {
+							isMistake = isMistake || rubyText.Value.Any(c => GetTextType(c) != TextType.Hiragana);
+						}
+
+						if (isMistake) {
 							if (rubyBase != null) {
 								res += $"[{rubyBase.Value}]";
 							}
