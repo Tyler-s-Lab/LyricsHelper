@@ -14,7 +14,7 @@
 
   <ItemGroup>
     <Content Include="LyricsHelper.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
 
