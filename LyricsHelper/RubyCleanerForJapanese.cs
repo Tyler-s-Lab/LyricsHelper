@@ -1,7 +1,4 @@
-﻿using SharpCompress.Archives;
-using SharpCompress.Archives.Zip;
-using SharpCompress.Common;
-using System.IO;
+﻿using System.IO;
 using System.Xml.Linq;
 using static LyricsHelper.CharHelper;
 
