@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:LyricsHelper"
+        WindowStartupLocation="CenterOwner"
         mc:Ignorable="d" Height="300" Width="400" ResizeMode="CanResizeWithGrip"
         Title="WindowText" SizeToContent="Manual">
     <DockPanel>

@@ -18,9 +18,10 @@ public partial class MainWindow : Window {
 		if (res != null) {
 			App.Current.Dispatcher.Invoke(new Action(() => {
 				var wint = new WindowText {
+					Owner = this,
 					Text = res
 				};
-				wint.ShowDialog();
+				wint.Show();
 			}));
 		}
 		return;
@@ -34,9 +35,10 @@ public partial class MainWindow : Window {
 		if (res != null) {
 			App.Current.Dispatcher.Invoke(new Action(() => {
 				var wint = new WindowText {
+					Owner = this,
 					Text = res
 				};
-				wint.ShowDialog();
+				wint.Show();
 			}));
 		}
 		return;
