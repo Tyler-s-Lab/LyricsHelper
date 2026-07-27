@@ -31,8 +31,12 @@ namespace LyricsHelper {
 				foreach (var run in runs) {
 					bool isMistake = false; // 带颜色的Ruby表明读音并非正确 + 包含平假名以外的ruby
 					if (run.Element(w + "rPr") is XElement runPreference) {
-						if (runPreference.Element(w + "color") != null) {
-							isMistake = true;
+						if (runPreference.Element(w + "color") is XElement color) {
+							if (color.Attribute(w + "val") is XAttribute colorVal) {
+								if (colorVal.Value != "000000") {
+									isMistake = true;
+								}
+							}
 						}
 					}
 					if (run.Element(w + "t") is XElement text) {
@@ -63,8 +67,11 @@ namespace LyricsHelper {
 							}
 						}
 					}
+					else if (run.Element(w + "br") is XElement _) {
+						res += '\n';
+					}
 				}
-				res += '\n';
+				res += Environment.NewLine;
 			}
 			return res;
 		}
