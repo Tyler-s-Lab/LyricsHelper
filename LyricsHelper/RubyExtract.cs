@@ -1,4 +1,5 @@
-﻿using System.Xml.Linq;
+using System.Text;
+using System.Xml.Linq;
 using static LyricsHelper.CharHelper;
 
 namespace LyricsHelper {
@@ -8,7 +9,7 @@ namespace LyricsHelper {
 			string err = "";
 			try {
 				var res = await OfficeWordDocProc.ReadFilesAsync(paths, ProcessXml);
-				err = string.Join("\n\n", res);
+				err = TextUtil.JoinCapped(res, "\n\n", DocumentLimits.MaxResultChars);
 			}
 			catch (Exception ex) {
 				err = ex.Message;
@@ -16,52 +17,152 @@ namespace LyricsHelper {
 			return err;
 		}
 
-		static string? ProcessXml(XContainer xml) {
-			string res = "";
-			XNamespace w = @"http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-			if (xml.Element(w + "document") is not XElement document) {
-				throw new Exception("XML not including w:document");
-			}
-			if (document.Element(w + "body") is not XElement body) {
-				throw new Exception("XML not including w:body");
-			}
+		static string? ProcessXml(XElement root) {
+			if (!WordStoryParts.IsStoryRoot(root))
+				throw new Exception("XML not including a Word story root");
 
-			foreach (var paragraph in body.Elements(w + "p")) {
-				foreach (var run in paragraph.Elements(w + "r")) {
-					bool isMistakeRun = false; // 带颜色的Ruby表明读音并非正确 + 包含平假名以外的ruby
+			XNamespace w = root.Name.Namespace;
+			var builder = new StringBuilder();
+			bool truncated = false;
 
-					foreach (var ele in run.Elements()) {
-						if (ele.Name == w + "rPr" && ele is XElement runPreference) {
-							bool isBlack = runPreference.Element(w + "color")?.Attribute(w + "val")?.Value?.Equals("000000") ?? true;
-							isMistakeRun = isMistakeRun || !isBlack;
-						}
-						else if (ele.Name == w + "t" && ele is XElement text) {
-							res += text.Value;//.Replace("“", null);
-						}
-						else if (ele.Name == w + "ruby" && ele is XElement ruby) {
-							var rubyText = ruby.Element(w + "rt")?.Element(w + "r")?.Element(w + "t")?.Value;
-							var rubyBase = ruby.Element(w + "rubyBase")?.Element(w + "r")?.Element(w + "t")?.Value;
+			void Add(string? value) {
+				if (truncated || string.IsNullOrEmpty(value))
+					return;
 
-							bool isMistakeRuby = rubyText?.Any(c => GetTextType(c) != TextType.Hiragana) ?? false;
-
-							if (isMistakeRun || isMistakeRuby) {
-								res += $"[{rubyBase}]";
-								res += $"({rubyText})";
-							}
-							else {
-								res += rubyText ?? rubyBase;
-							}
-						}
-						else if (ele.Name == w + "br") {
-							res += '\n';
-						}
-					}
-
+				int room = DocumentLimits.MaxResultChars - builder.Length;
+				if (value.Length <= room) {
+					builder.Append(value);
+					return;
 				}
-				res += Environment.NewLine;
+
+				if (room > 0)
+					builder.Append(value, 0, room);
+				builder.Append("\n[output truncated]");
+				truncated = true;
 			}
-			return res;
+
+			void WalkRuby(XElement ruby, XElement? outerRun) {
+				string? rubyText = GetContainerText(ruby.Element(w + "rt"), w);
+				string? rubyBase = GetContainerText(ruby.Element(w + "rubyBase"), w);
+
+				bool mistakeColor = HasMistakeColor(ruby, outerRun, w);
+				bool mistakeReading = rubyText is not null && rubyText.Any(c => !IsHiraganaReadingChar(c));
+
+				if (mistakeColor || mistakeReading) {
+					Add("[");
+					Add(rubyBase);
+					Add("](");
+					Add(rubyText);
+					Add(")");
+					return;
+				}
+
+				// If the reading is missing/empty, keep the base text instead of
+				// silently dropping the lyric.
+				Add(!string.IsNullOrEmpty(rubyText) ? rubyText : rubyBase);
+			}
+
+			void WalkRun(XElement run) {
+				foreach (XElement child in run.Elements()) {
+					if (child.Name == w + "rPr")
+						continue;
+
+					if (child.Name == w + "t") {
+						Add(child.Value);
+					}
+					else if (child.Name == w + "ruby") {
+						WalkRuby(child, run);
+					}
+					else if (child.Name == w + "tab") {
+						Add("\t");
+					}
+					else if (child.Name == w + "br" || child.Name == w + "cr") {
+						Add("\n");
+					}
+					else if (child.Name == w + "noBreakHyphen") {
+						Add("\u2011");
+					}
+					else if (child.Name == w + "softHyphen") {
+						Add("\u00AD");
+					}
+					else if (child.Name == w + "sym") {
+						Add(GetSymbolText(child, w));
+					}
+					else if (child.Name == w + "drawing" || child.Name == w + "pict") {
+						// Text boxes inside drawings are separate paragraphs and
+						// are visited by the paragraph loop below.
+						continue;
+					}
+					else {
+						WalkInline(child);
+					}
+				}
+			}
+
+			void WalkInline(XElement parent) {
+				foreach (XElement child in parent.Elements()) {
+					if (child.Name == w + "p")
+						continue; // nested text-box paragraph: processed separately
+					if (child.Name == w + "r")
+						WalkRun(child);
+					else if (child.Name == w + "ruby")
+						WalkRuby(child, null);
+					else
+						WalkInline(child);
+				}
+			}
+
+			foreach (XElement paragraph in root.Descendants(w + "p")) {
+				if (truncated)
+					break;
+
+				WalkInline(paragraph);
+				Add(Environment.NewLine);
+			}
+
+			return builder.ToString();
 		}
 
+		static string? GetContainerText(XElement? container, XNamespace w) {
+			if (container is null)
+				return null;
+
+			string text = string.Concat(container.Descendants(w + "t").Select(text => text.Value));
+			return text.Length == 0 ? null : text;
+		}
+
+		static bool HasMistakeColor(XElement ruby, XElement? outerRun, XNamespace w) {
+			if (HasExplicitNonBlackColor(outerRun?.Element(w + "rPr"), w))
+				return true;
+
+			return ruby.Descendants(w + "rPr").Any(runProperties => HasExplicitNonBlackColor(runProperties, w));
+		}
+
+		static bool HasExplicitNonBlackColor(XElement? runProperties, XNamespace w) {
+			XElement? color = runProperties?.Element(w + "color");
+			if (color is null)
+				return false;
+
+			string? value = (string?)color.Attribute(w + "val");
+			if (string.IsNullOrEmpty(value))
+				return false;
+
+			return !value.Equals("auto", StringComparison.OrdinalIgnoreCase)
+				&& !value.Equals("000000", StringComparison.OrdinalIgnoreCase);
+		}
+
+		static string? GetSymbolText(XElement symbol, XNamespace w) {
+			string? value = (string?)symbol.Attribute(w + "char");
+			if (string.IsNullOrEmpty(value))
+				return null;
+
+			try {
+				int codePoint = Convert.ToInt32(value, 16);
+				return char.ConvertFromUtf32(codePoint);
+			}
+			catch {
+				return null;
+			}
+		}
 	}
 }

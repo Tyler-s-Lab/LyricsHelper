@@ -1,4 +1,3 @@
-﻿using System.IO;
 using System.Xml.Linq;
 using static LyricsHelper.CharHelper;
 
@@ -9,7 +8,7 @@ namespace LyricsHelper {
 			string err = "";
 			try {
 				var res = await OfficeWordDocProc.ModifyFilesAsync(paths, ProcessXml);
-				err = string.Join("\n", res);
+				err = TextUtil.JoinCapped(res, "\n", DocumentLimits.MaxResultChars);
 			}
 			catch (Exception ex) {
 				err = ex.Message;
@@ -17,94 +16,133 @@ namespace LyricsHelper {
 			return err;
 		}
 
-		static ValueTuple<XContainer, string> ProcessXml(string path, XContainer xml) {
-			XNamespace w = @"http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-			if (xml.Element(w + "document") is not XElement document) {
-				throw new Exception("XML not including w:document");
+		/// <summary>
+		/// Rewrites only the w:ruby nodes of one story part. Everything else in
+		/// the surrounding run/paragraph is left untouched, so the operation
+		/// cannot drop bookmarks, breaks or other run children.
+		/// </summary>
+		static bool ProcessXml(XElement root) {
+			if (!WordStoryParts.IsStoryRoot(root))
+				throw new Exception("XML not including a Word story root");
+
+			XNamespace w = root.Name.Namespace;
+			var rubies = root.Descendants(w + "ruby").ToList();
+			long rebuildBudget = DocumentLimits.MaxRebuildNodes;
+			bool modified = false;
+
+			foreach (XElement ruby in rubies) {
+				if (ruby.Parent is null)
+					continue;
+
+				if (ruby.Parent is not XElement parentRun)
+					continue;
+				if (parentRun.Name != w + "r")
+					continue;
+
+				XElement? rubyTextContainer = ruby.Element(w + "rt");
+				XElement? rubyBaseContainer = ruby.Element(w + "rubyBase");
+				string? rubyText = GetContainerText(rubyTextContainer, w);
+				string? rubyBase = GetContainerText(rubyBaseContainer, w);
+				if (string.IsNullOrEmpty(rubyText) || string.IsNullOrEmpty(rubyBase))
+					continue;
+
+				if (rubyBase.Length > DocumentLimits.MaxRubyBaseLength
+					|| rubyText.Length > DocumentLimits.MaxRubyTextLength)
+					continue;
+
+				List<XElement> rubyTextRuns = GetPlainRuns(rubyTextContainer, w);
+				List<XElement> rubyBaseRuns = GetPlainRuns(rubyBaseContainer, w);
+				if (rubyTextRuns.Count == 0 || rubyBaseRuns.Count == 0)
+					continue;
+
+				List<RubySegment> segments;
+				try {
+					var textSegments = SplitJapaneseTextManual(rubyBase);
+					if (textSegments.Count < 2)
+						continue;
+					segments = GetRubySegments(textSegments, rubyText);
+				}
+				catch {
+					// A malformed annotation is left exactly as Word wrote it.
+					continue;
+				}
+
+				XElement? rubyProperties = ruby.Element(w + "rubyPr");
+				XElement? rubyTextProperties = rubyTextRuns[0].Element(w + "rPr");
+				XElement? rubyBaseProperties = rubyBaseRuns[0].Element(w + "rPr");
+
+				long preferenceNodes = CountNodes(rubyProperties)
+					+ CountNodes(rubyTextProperties)
+					+ CountNodes(rubyBaseProperties);
+				long rebuildCost = (long)segments.Count * (10 + preferenceNodes);
+				if (rebuildCost > rebuildBudget)
+					continue;
+				rebuildBudget -= rebuildCost;
+
+				// Replace the w:ruby node with run *content*, not with new
+				// w:r wrappers: the ruby already lives inside its run and that
+				// run keeps its rPr, bookmarks and other children.
+				var replacement = new List<XElement>(segments.Count);
+				foreach (RubySegment segment in segments) {
+					if (segment.Type == TextType.Hiragana || string.IsNullOrEmpty(segment.Ruby)) {
+						replacement.Add(CreateText(w, segment.Text));
+					}
+					else {
+						var readingRun = new XElement(w + "r");
+						if (rubyTextProperties is not null)
+							readingRun.Add(new XElement(rubyTextProperties));
+						readingRun.Add(CreateText(w, segment.Ruby));
+
+						var baseRun = new XElement(w + "r");
+						if (rubyBaseProperties is not null)
+							baseRun.Add(new XElement(rubyBaseProperties));
+						baseRun.Add(CreateText(w, segment.Text));
+
+						var newRuby = new XElement(w + "ruby");
+						if (rubyProperties is not null)
+							newRuby.Add(new XElement(rubyProperties));
+						newRuby.Add(new XElement(w + "rt", readingRun));
+						newRuby.Add(new XElement(w + "rubyBase", baseRun));
+						replacement.Add(newRuby);
+					}
+				}
+
+				ruby.ReplaceWith(replacement.Cast<object>().ToArray());
+				modified = true;
 			}
-			if (document.Element(w + "body") is not XElement body) {
-				throw new Exception("XML not including w:body");
+
+			return modified;
+		}
+
+		static XElement CreateText(XNamespace w, string text) {
+			return new XElement(w + "t",
+				new XAttribute(XNamespace.Xml + "space", "preserve"),
+				text);
+		}
+
+		static string? GetContainerText(XElement? container, XNamespace w) {
+			if (container is null)
+				return null;
+
+			string text = string.Concat(container.Descendants(w + "t").Select(text => text.Value));
+			return text.Length == 0 ? null : text;
+		}
+
+		static List<XElement> GetPlainRuns(XElement? container, XNamespace w) {
+			if (container is null)
+				return [];
+
+			var runs = container.Elements(w + "r").ToList();
+			foreach (XElement run in runs) {
+				if (run.Elements().Any(child => child.Name != w + "rPr" && child.Name != w + "t"))
+					return [];
 			}
-			var paragraphs = body.Elements(w + "p");
 
-			foreach (var paragraph in paragraphs) {
-				var newRuns = paragraph.Elements().SelectMany(element => {
-					if (element.Name != w + "r") {
-						return [element];
-					}
+			return runs;
+		}
 
-					var run = element;
-					if (run.Element(w + "t") is not null) {
-						return [element];
-					}
-					var runPreference = run.Element(w + "rPr");
-
-					if (run.Element(w + "ruby") is not XElement ruby) {
-						return [element];
-					}
-					var rubyPreference = ruby.Element(w + "rubyPr");
-
-					var rubyTextRun = ruby.Element(w + "rt")?.Element(w + "r");
-					var rubyTextPr = rubyTextRun?.Element(w + "rPr");
-
-					var rubyBaseRun = ruby.Element(w + "rubyBase")?.Element(w + "r");
-					var rubyBasePr = rubyBaseRun?.Element(w + "rPr");
-
-					var rubyText = rubyTextRun?.Element(w + "t")?.Value;
-					var rubyBase = rubyBaseRun?.Element(w + "t")?.Value;
-					if (rubyText is null || rubyBase is null) {
-						return [element];
-					}
-
-					List<RubySegment> rubyseg;
-					try {
-						var segs = SplitJapaneseTextManual(rubyBase);
-						if (segs.Count < 2) {
-							return [element];
-						}
-						rubyseg = GetRubySegments(segs, rubyText);
-					}
-					catch {
-						return [element];
-					}
-
-					List<XElement> res = [];
-					foreach (var rs in rubyseg) {
-						res.Add(
-						new XElement(w + "r",
-							runPreference,
-							(rs.Type == TextType.Hiragana) ?
-							new XElement(w + "t",
-								rs.Text
-							) :
-							new XElement(w + "ruby",
-								rubyPreference,
-								new XElement(w + "rt",
-									new XElement(w + "r",
-										rubyTextPr,
-										new XElement(w + "t",
-											rs.Ruby
-										)
-									)
-								),
-								new XElement(w + "rubyBase",
-									new XElement(w + "r",
-										rubyBasePr,
-										new XElement(w + "t",
-											rs.Text
-										)
-									)
-								)
-							)
-						)
-						);
-					}
-					return res.ToArray();
-				});
-
-				paragraph.ReplaceNodes(newRuns);
-			}
-			return (xml, Path.ChangeExtension(path, ".C"));
+		static int CountNodes(XElement? element) {
+			return element is null ? 0 : 1 + element.Descendants().Count();
 		}
 
 		static List<RubySegment> GetRubySegments(List<TextSegment> segs, string rubyText) {
@@ -115,7 +153,7 @@ namespace LyricsHelper {
 				var first = segs.First();
 				if (first.Type is TextType.Hiragana) {
 					i = 1;
-					if (rubyText.StartsWith(first.Text)) {
+					if (rubyText.StartsWith(first.Text, StringComparison.Ordinal)) {
 						result.Add(new RubySegment(first.Text, first.Type, first.Text));
 						rubyText = rubyText[first.Text.Length..];
 					}
@@ -130,8 +168,8 @@ namespace LyricsHelper {
 				if (seg.Type is not TextType.Hiragana) {
 					goto FailedSplitAndMoveIntoRes;
 				}
-				var i0 = rubyText.IndexOf(seg.Text);
-				var i1 = rubyText.LastIndexOf(seg.Text);
+				var i0 = rubyText.IndexOf(seg.Text, StringComparison.Ordinal);
+				var i1 = rubyText.LastIndexOf(seg.Text, StringComparison.Ordinal);
 				if (i0 == -1 || i0 != i1) {
 					goto FailedSplitAndMoveIntoRes;
 				}
@@ -163,8 +201,8 @@ namespace LyricsHelper {
 			}
 			if (segs.Count - 1 == i) { // Is end with hiragana seg.
 				var last = segs.Last();
-				if (rubyText.EndsWith(last.Text)) {
-					var i0 = rubyText.LastIndexOf(last.Text);
+				if (rubyText.EndsWith(last.Text, StringComparison.Ordinal)) {
+					var i0 = rubyText.LastIndexOf(last.Text, StringComparison.Ordinal);
 					if (!lastIsSet) {
 						var last0 = result.Last();
 						result.RemoveAt(result.Count - 1);
@@ -194,7 +232,6 @@ namespace LyricsHelper {
 			return result;
 		}
 
-
 		static List<TextSegment> SplitJapaneseTextManual(string input) {
 			var segments = new List<TextSegment>();
 			if (string.IsNullOrEmpty(input)) return segments;
@@ -204,12 +241,11 @@ namespace LyricsHelper {
 				TextType currentType = GetTextType(input[i]);
 				int start = i;
 
-				// 找到相同类型的连续字符
 				while (i < input.Length && GetTextType(input[i]) == currentType) {
 					i++;
 				}
 
-				string segmentText = input[start..i ];
+				string segmentText = input[start..i];
 				segments.Add(new TextSegment(segmentText, currentType));
 			}
 
