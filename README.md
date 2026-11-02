@@ -59,6 +59,14 @@ Documents are treated as untrusted. The application applies the following bounds
 
 `System.IO.Compression.ZipArchive` is used for the untrusted container path. The SharpCompress package reference is intentionally left unchanged by this release; it is no longer used to parse or rewrite dropped documents.
 
+## Tests
+
+The dependency-free regression project exercises multi-run ruby, table/hyperlink/content-control extraction, Strict OOXML, empty readings and color handling:
+
+```powershell
+dotnet run --project tests/LyricsHelper.RegressionTests/LyricsHelper.RegressionTests.csproj
+```
+
 ## What it can't (yet)
 
 - To *generate* ruby text.
