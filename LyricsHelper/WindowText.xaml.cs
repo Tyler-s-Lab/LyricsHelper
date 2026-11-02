@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Input;
 
 namespace LyricsHelper {
@@ -15,7 +15,13 @@ namespace LyricsHelper {
 				return textbox.Text;
 			}
 			set {
-				textbox.Text = value;
+				string text = value ?? string.Empty;
+				const int MaxDisplayChars = DocumentLimits.MaxDisplayChars;
+				if (text.Length > MaxDisplayChars) {
+					text = text[..MaxDisplayChars]
+						+ $"\n[... result truncated: showing first {MaxDisplayChars} of {text.Length} characters ...]";
+				}
+				textbox.Text = text;
 			}
 		}
 
