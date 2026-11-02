@@ -7,10 +7,14 @@ namespace LyricsHelper {
 	/// </summary>
 	internal static class RubyTextPolicy {
 
-		public static bool IsSpecialBase(string baseText) {
-			return IsFullyKatakana(baseText)
-				|| IsLatinOrDigitBase(baseText)
-				|| IsSymbolBase(baseText);
+		public static bool IsSpecialBase(string baseText, string? reading) {
+			if (IsFullyKatakana(baseText) || IsLatinOrDigitBase(baseText))
+				return true;
+
+			// A symbol base is only "special" when the ruby merely replaces
+			// it with another symbol (…/・・・, 【/（). If the ruby is a real
+			// reading (☆/ほし, ○/まる), the normal ruby rules apply.
+			return IsSymbolBase(baseText) && IsSymbolOnly(reading);
 		}
 
 		/// <summary>
@@ -100,13 +104,37 @@ namespace LyricsHelper {
 				return true;
 			}
 
-			if (IsLatinOrDigitBase(baseText) || IsSymbolBase(baseText)) {
+			if (IsLatinOrDigitBase(baseText)) {
+				result = baseText;
+				return true;
+			}
+
+			if (IsSymbolBase(baseText) && IsSymbolOnly(reading)) {
 				result = baseText;
 				return true;
 			}
 
 			result = "";
 			return false;
+		}
+
+		/// <summary>
+		/// True when the text contains only symbols/punctuation (and optional
+		/// whitespace), i.e. it is not a kana/kanji/Latin reading.
+		/// </summary>
+		public static bool IsSymbolOnly(string? text) {
+			if (string.IsNullOrEmpty(text))
+				return false;
+
+			bool hasSymbol = false;
+			foreach (char c in text) {
+				if (char.IsWhiteSpace(c))
+					continue;
+				if (!char.IsPunctuation(c) && !char.IsSymbol(c))
+					return false;
+				hasSymbol = true;
+			}
+			return hasSymbol;
 		}
 
 		/// <summary>

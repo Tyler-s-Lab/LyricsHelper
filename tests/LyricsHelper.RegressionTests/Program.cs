@@ -19,6 +19,7 @@ internal static class Program {
 			await ExtractionHandlesStrictAndEmptyReading(root);
 			await ExtractionDistinguishesColorStates(root);
 			await SpecialRubyRules(root);
+			await SymbolReadingsUseGeneralRubyRules(root);
 		}
 		finally {
 			try {
@@ -110,12 +111,13 @@ internal static class Program {
 			&& sns == "SNS", "Latin base with full-width reading did not keep the base text");
 		Check(RubyTextPolicy.TryGetSpecialExtraction("123", "１２３", out string digits)
 			&& digits == "123", "digit base did not keep the base text");
-		Check(RubyTextPolicy.TryGetSpecialExtraction("☆", "ほし", out string star)
-			&& star == "☆", "symbol base did not keep the symbol");
-		Check(RubyTextPolicy.TryGetSpecialExtraction("♪", "おんぷ", out string note)
-			&& note == "♪", "symbol base did not keep the music note");
+		Check(!RubyTextPolicy.TryGetSpecialExtraction("☆", "ほし", out _), "symbol with a real reading was treated as special");
+		Check(!RubyTextPolicy.TryGetSpecialExtraction("♪", "おんぷ", out _), "music note with a real reading was treated as special");
+		Check(!RubyTextPolicy.TryGetSpecialExtraction("○", "まる", out _), "circle with a real reading was treated as special");
 		Check(RubyTextPolicy.TryGetSpecialExtraction("…", "・・・", out string ellipsis)
 			&& ellipsis == "…", "punctuation base did not keep the symbol");
+		Check(RubyTextPolicy.TryGetSpecialExtraction("【", "（", out string bracket)
+			&& bracket == "【", "bracket base did not keep the symbol");
 		Check(!RubyTextPolicy.TryGetSpecialExtraction("守ります", "まもります", out _), "normal kanji base was treated as special");
 
 		static string Paragraph(string baseText, string reading) {
@@ -127,7 +129,7 @@ internal static class Program {
 			+ Paragraph("コンピューター", "こんぴゅーたー")
 			+ Paragraph("インターネット", "INTERNET")
 			+ Paragraph("Dream", "Ｄｒｅａｍ")
-			+ Paragraph("☆", "ほし")
+			+ Paragraph("…", "・・・")
 			+ @"</w:body></w:document>";
 
 		string input = MakeDocx(root, "special.docx", document);
@@ -136,7 +138,7 @@ internal static class Program {
 		Check(extracted.Contains("こんぴゅうたあ", StringComparison.Ordinal), "special extraction did not expand the long vowel");
 		Check(extracted.Contains("いんたあねっと", StringComparison.Ordinal), "special extraction did not convert the katakana base with an English reading");
 		Check(extracted.Contains("Dream", StringComparison.Ordinal), "special extraction lost the Latin base");
-		Check(extracted.Contains("☆", StringComparison.Ordinal), "special extraction lost the symbol base");
+		Check(extracted.Contains("…", StringComparison.Ordinal), "special extraction lost the symbol base");
 
 		string cleaningResult = await RubyCleanerForJapanese.TryProcess([input]);
 		Check(!cleaningResult.Contains("Error", StringComparison.Ordinal), "special cleaning reported an error: " + cleaningResult);
@@ -146,7 +148,34 @@ internal static class Program {
 		Check(!xml.Contains("<w:ruby", StringComparison.Ordinal), "special cleaning left ruby nodes behind");
 		Check(xml.Contains(">アイウエオ</w:t>", StringComparison.Ordinal), "special cleaning lost the katakana base");
 		Check(xml.Contains(">Dream</w:t>", StringComparison.Ordinal), "special cleaning lost the Latin base");
-		Check(xml.Contains(">☆</w:t>", StringComparison.Ordinal), "special cleaning lost the symbol base");
+		Check(xml.Contains(">…</w:t>", StringComparison.Ordinal), "special cleaning lost the symbol base");
+	}
+
+	private static async Task SymbolReadingsUseGeneralRubyRules(string root) {
+		static string Paragraph(string baseText, string reading) {
+			return $@"<w:p><w:r><w:ruby><w:rt><w:r><w:t>{reading}</w:t></w:r></w:rt><w:rubyBase><w:r><w:t>{baseText}</w:t></w:r></w:rubyBase></w:ruby></w:r></w:p>";
+		}
+
+		string document = @"<w:document xmlns:w=""http://schemas.openxmlformats.org/wordprocessingml/2006/main""><w:body>"
+			+ Paragraph("☆", "ほし")
+			+ Paragraph("♪", "おんぷ")
+			+ Paragraph("○", "まる")
+			+ @"</w:body></w:document>";
+
+		string input = MakeDocx(root, "symbol-readings.docx", document);
+		string extracted = await RubyExtract.TryProcess([input]);
+		Check(extracted.Contains("ほし", StringComparison.Ordinal), "real symbol reading ほし was not extracted");
+		Check(extracted.Contains("おんぷ", StringComparison.Ordinal), "real symbol reading おんぷ was not extracted");
+		Check(extracted.Contains("まる", StringComparison.Ordinal), "real symbol reading まる was not extracted");
+
+		string cleaningResult = await RubyCleanerForJapanese.TryProcess([input]);
+		Check(!cleaningResult.Contains("Error", StringComparison.Ordinal), "symbol-reading cleaning reported an error: " + cleaningResult);
+
+		string output = Path.ChangeExtension(input, ".C") + ".docx";
+		string xml = ReadEntry(output, "word/document.xml");
+		Check(xml.Contains("<w:ruby", StringComparison.Ordinal), "real symbol readings should keep their ruby");
+		Check(xml.Contains(">☆</w:t>", StringComparison.Ordinal), "symbol-reading cleaning lost the symbol base");
+		Check(xml.Contains(">ほし</w:t>", StringComparison.Ordinal), "symbol-reading cleaning lost the reading");
 	}
 
 	private static string MakeDocx(string root, string name, string documentXml) {

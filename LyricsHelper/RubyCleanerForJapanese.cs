@@ -50,7 +50,7 @@ namespace LyricsHelper {
 				// applies when the base is English/digits or a symbol, where
 				// the ruby is usually a translation or a description rather
 				// than a reading.
-				if (RubyTextPolicy.IsSpecialBase(rubyBase)) {
+				if (RubyTextPolicy.IsSpecialBase(rubyBase, rubyText)) {
 					ReplaceSpecialRuby(ruby, parentRun, w, rubyBase);
 					modified = true;
 					continue;
