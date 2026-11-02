@@ -34,9 +34,16 @@ public partial class MainWindow : Window {
 
 		_isProcessing = true;
 		try {
+			string result;
+			try {
+				result = await process(paths);
+			}
+			catch (Exception ex) {
+				result = $"[Unexpected error: {ex.Message}]";
+			}
+
 			// The result is shown even when it is empty: the window is the
 			// user's signal that the task has finished (success or failure).
-			string result = await process(paths);
 			ShowResult(result);
 		}
 		finally {
