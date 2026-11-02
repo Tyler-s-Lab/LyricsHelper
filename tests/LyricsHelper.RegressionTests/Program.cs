@@ -18,6 +18,7 @@ internal static class Program {
 			await ExtractionCoversNestedStructures(root);
 			await ExtractionHandlesStrictAndEmptyReading(root);
 			await ExtractionDistinguishesColorStates(root);
+			await SpecialRubyRules(root);
 		}
 		finally {
 			try {
@@ -86,6 +87,66 @@ internal static class Program {
 			@"<w:document xmlns:w=""http://schemas.openxmlformats.org/wordprocessingml/2006/main""><w:body><w:p><w:r><w:ruby><w:rt><w:r><w:rPr><w:color w:val=""FF0000""/></w:rPr><w:t>まも</w:t></w:r></w:rt><w:rubyBase><w:r><w:t>守</w:t></w:r></w:rubyBase></w:ruby></w:r></w:p></w:body></w:document>");
 		string redResult = await RubyExtract.TryProcess([red]);
 		Check(redResult.Contains("[守](まも)", StringComparison.Ordinal), "explicit non-black reading color was not reported");
+	}
+
+	private static async Task SpecialRubyRules(string root) {
+		Check(RubyTextPolicy.TryGetHiraganaReading("こんぴゅーたー", out string computer)
+			&& computer == "こんぴゅうたあ", "katakana reading was not normalised");
+		Check(RubyTextPolicy.TryGetHiraganaReading("めもりー", out string memory)
+			&& memory == "めもりい", "long vowel after り was not expanded");
+		Check(RubyTextPolicy.TryGetHiraganaReading("いんたーねっと", out string internet)
+			&& internet == "いんたあねっと", "long vowel after た was not expanded");
+		Check(!RubyTextPolicy.TryGetHiraganaReading("INTERNET", out _), "English reading was treated as hiragana");
+
+		Check(RubyTextPolicy.TryGetSpecialExtraction("アイウエオ", "あいうえお", out string katakana)
+			&& katakana == "あいうえお", "full-katakana base did not use the hiragana reading");
+		Check(RubyTextPolicy.TryGetSpecialExtraction("インターネット", "INTERNET", out string internetBase)
+			&& internetBase == "いんたあねっと", "full-katakana base with English reading was not converted to hiragana");
+		Check(RubyTextPolicy.TryGetSpecialExtraction("エンジェル", "ANGEL", out string angelBase)
+			&& angelBase == "えんじぇる", "full-katakana base with English reading was not converted to hiragana");
+		Check(RubyTextPolicy.TryGetSpecialExtraction("Dream", "Ｄｒｅａｍ", out string latin)
+			&& latin == "Dream", "Latin base did not keep the base text");
+		Check(RubyTextPolicy.TryGetSpecialExtraction("SNS", "ＳＮＳ", out string sns)
+			&& sns == "SNS", "Latin base with full-width reading did not keep the base text");
+		Check(RubyTextPolicy.TryGetSpecialExtraction("123", "１２３", out string digits)
+			&& digits == "123", "digit base did not keep the base text");
+		Check(RubyTextPolicy.TryGetSpecialExtraction("☆", "ほし", out string star)
+			&& star == "☆", "symbol base did not keep the symbol");
+		Check(RubyTextPolicy.TryGetSpecialExtraction("♪", "おんぷ", out string note)
+			&& note == "♪", "symbol base did not keep the music note");
+		Check(RubyTextPolicy.TryGetSpecialExtraction("…", "・・・", out string ellipsis)
+			&& ellipsis == "…", "punctuation base did not keep the symbol");
+		Check(!RubyTextPolicy.TryGetSpecialExtraction("守ります", "まもります", out _), "normal kanji base was treated as special");
+
+		static string Paragraph(string baseText, string reading) {
+			return $@"<w:p><w:r><w:ruby><w:rt><w:r><w:t>{reading}</w:t></w:r></w:rt><w:rubyBase><w:r><w:t>{baseText}</w:t></w:r></w:rubyBase></w:ruby></w:r></w:p>";
+		}
+
+		string document = @"<w:document xmlns:w=""http://schemas.openxmlformats.org/wordprocessingml/2006/main""><w:body>"
+			+ Paragraph("アイウエオ", "あいうえお")
+			+ Paragraph("コンピューター", "こんぴゅーたー")
+			+ Paragraph("インターネット", "INTERNET")
+			+ Paragraph("Dream", "Ｄｒｅａｍ")
+			+ Paragraph("☆", "ほし")
+			+ @"</w:body></w:document>";
+
+		string input = MakeDocx(root, "special.docx", document);
+		string extracted = await RubyExtract.TryProcess([input]);
+		Check(extracted.Contains("あいうえお", StringComparison.Ordinal), "special extraction lost katakana reading");
+		Check(extracted.Contains("こんぴゅうたあ", StringComparison.Ordinal), "special extraction did not expand the long vowel");
+		Check(extracted.Contains("いんたあねっと", StringComparison.Ordinal), "special extraction did not convert the katakana base with an English reading");
+		Check(extracted.Contains("Dream", StringComparison.Ordinal), "special extraction lost the Latin base");
+		Check(extracted.Contains("☆", StringComparison.Ordinal), "special extraction lost the symbol base");
+
+		string cleaningResult = await RubyCleanerForJapanese.TryProcess([input]);
+		Check(!cleaningResult.Contains("Error", StringComparison.Ordinal), "special cleaning reported an error: " + cleaningResult);
+
+		string output = Path.ChangeExtension(input, ".C") + ".docx";
+		string xml = ReadEntry(output, "word/document.xml");
+		Check(!xml.Contains("<w:ruby", StringComparison.Ordinal), "special cleaning left ruby nodes behind");
+		Check(xml.Contains(">アイウエオ</w:t>", StringComparison.Ordinal), "special cleaning lost the katakana base");
+		Check(xml.Contains(">Dream</w:t>", StringComparison.Ordinal), "special cleaning lost the Latin base");
+		Check(xml.Contains(">☆</w:t>", StringComparison.Ordinal), "special cleaning lost the symbol base");
 	}
 
 	private static string MakeDocx(string root, string name, string documentXml) {

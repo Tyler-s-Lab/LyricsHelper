@@ -45,6 +45,14 @@ namespace LyricsHelper {
 				string? rubyText = GetContainerText(ruby.Element(w + "rt"), w);
 				string? rubyBase = GetContainerText(ruby.Element(w + "rubyBase"), w);
 
+				// Katakana/Latin/digit/symbol bases have their own output
+				// policy: do not treat their (often translated or descriptive)
+				// reading as the lyric text.
+				if (RubyTextPolicy.TryGetSpecialExtraction(rubyBase, rubyText, out string specialText)) {
+					Add(specialText);
+					return;
+				}
+
 				bool mistakeColor = HasMistakeColor(ruby, outerRun, w);
 				bool mistakeReading = rubyText is not null && rubyText.Any(c => !IsHiraganaReadingChar(c));
 

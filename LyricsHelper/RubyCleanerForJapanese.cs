@@ -43,7 +43,20 @@ namespace LyricsHelper {
 				XElement? rubyBaseContainer = ruby.Element(w + "rubyBase");
 				string? rubyText = GetContainerText(rubyTextContainer, w);
 				string? rubyBase = GetContainerText(rubyBaseContainer, w);
-				if (string.IsNullOrEmpty(rubyText) || string.IsNullOrEmpty(rubyBase))
+				if (string.IsNullOrEmpty(rubyBase))
+					continue;
+
+				// Fully-katakana bases do not need furigana at all. The same
+				// applies when the base is English/digits or a symbol, where
+				// the ruby is usually a translation or a description rather
+				// than a reading.
+				if (RubyTextPolicy.IsSpecialBase(rubyBase)) {
+					ReplaceSpecialRuby(ruby, parentRun, w, rubyBase);
+					modified = true;
+					continue;
+				}
+
+				if (string.IsNullOrEmpty(rubyText))
 					continue;
 
 				if (rubyBase.Length > DocumentLimits.MaxRubyBaseLength
@@ -118,6 +131,38 @@ namespace LyricsHelper {
 			return new XElement(w + "t",
 				new XAttribute(XNamespace.Xml + "space", "preserve"),
 				text);
+		}
+
+		/// <summary>
+		/// Removes a special-base ruby while keeping the base run properties.
+		/// When the surrounding run contains only the ruby and its rPr, the
+		/// whole run is rebuilt with the base run's formatting; otherwise the
+		/// ruby is replaced in place.
+		/// </summary>
+		static void ReplaceSpecialRuby(XElement ruby, XElement parentRun, XNamespace w, string baseText) {
+			var children = parentRun.Elements().ToList();
+			bool canReplaceRun = children.Count(child => child.Name == w + "ruby") == 1
+				&& children.All(child => child.Name == w + "rPr" || child.Name == w + "ruby")
+				&& parentRun.Nodes().All(node => node is XElement);
+
+			if (!canReplaceRun) {
+				ruby.ReplaceWith(CreateText(w, baseText));
+				return;
+			}
+
+			XElement? baseProperties = ruby.Element(w + "rubyBase")
+				?.Element(w + "r")
+				?.Element(w + "rPr")
+				?? parentRun.Element(w + "rPr");
+
+			var run = new XElement(w + "r");
+			foreach (XAttribute attribute in parentRun.Attributes())
+				run.Add(new XAttribute(attribute));
+			if (baseProperties is not null)
+				run.Add(new XElement(baseProperties));
+			run.Add(CreateText(w, baseText));
+
+			parentRun.ReplaceWith(run);
 		}
 
 		static string? GetContainerText(XElement? container, XNamespace w) {

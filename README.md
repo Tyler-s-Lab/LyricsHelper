@@ -34,8 +34,12 @@ especially useful for Japanese lyrics.
 
 ## How it behaves
 
-- **Stripping** replaces a ruby base with its reading. A ruby whose reading contains anything other than hiragana (the prolonged sound mark `ー` is allowed) or whose run/reading carries an explicit non-black color is emitted as `[base](reading)` so it can be reviewed instead of silently normalized.
-- **Cleaning** rewrites only `w:ruby` nodes. `w:rPr`, `w:rubyPr` and the surrounding run content are preserved; runs split across several `w:r` elements are read as one annotation, and no base text is dropped.
+- **Stripping** normally replaces a ruby base with its reading. A ruby whose reading contains anything other than hiragana (the prolonged sound mark `ー` is allowed) or whose run/reading carries an explicit non-black color is emitted as `[base](reading)` so it can be reviewed instead of silently normalized.
+- Three special base types override that default:
+  - **Fully-katakana base** (e.g. `アイウエオ`, `キミ`, `コンピューター`): Stripping always emits hiragana and expands `ー` to the preceding vowel. It uses the kana reading when one exists; if the reading is English or otherwise not kana, it normalises the katakana base (`インターネット`/`INTERNET` → `いんたあねっと`, `コンピューター` → `こんぴゅうたあ`, `メモリー` → `めもりい`).
+  - **Latin/digit base** (e.g. `Dream`, `Time`, `SNS`, `123`): Stripping emits the base only.
+  - **Symbol/punctuation base** (e.g. `☆`, `♪`, `…`, `【`, `】`): Stripping emits the base only.
+- **Cleaning** rewrites only `w:ruby` nodes. For the three special base types the ruby is removed entirely (the base remains as plain text); for ordinary kanji/kana bases the existing split behaviour applies. `w:rPr`, `w:rubyPr` and the surrounding run content are preserved, runs split across several `w:r` elements are read as one annotation, and no base text is dropped.
 - Results are written next to the input as `*.C.docx` or `*.C.xml`. An existing result is replaced atomically through a temporary file, and a failed run does not leave a partial output behind.
 - The result window is shown for every finished task, even when the result is empty; this is the completion signal (success or failure).
 - Long results are truncated in the output window, and the extraction result itself is capped.
@@ -61,7 +65,7 @@ Documents are treated as untrusted. The application applies the following bounds
 
 ## Tests
 
-The dependency-free regression project exercises multi-run ruby, table/hyperlink/content-control extraction, Strict OOXML, empty readings and color handling:
+The dependency-free regression project exercises multi-run ruby, table/hyperlink/content-control extraction, Strict OOXML, empty readings, color handling and the katakana/Latin/symbol rules:
 
 ```powershell
 dotnet run --project tests/LyricsHelper.RegressionTests/LyricsHelper.RegressionTests.csproj
