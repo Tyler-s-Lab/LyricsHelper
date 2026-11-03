@@ -51,12 +51,15 @@ namespace LyricsHelper {
 				// the ruby is usually a translation or a description rather
 				// than a reading.
 				if (RubyTextPolicy.IsSpecialBase(rubyBase, rubyText)) {
-					ReplaceSpecialRuby(ruby, parentRun, w, rubyBase);
-					modified = true;
+					if (ReplaceSpecialRuby(ruby, parentRun, w, rubyBase))
+						modified = true;
 					continue;
 				}
 
 				if (string.IsNullOrEmpty(rubyText))
+					continue;
+
+				if (!IsRubyOnlyRun(parentRun, ruby, w))
 					continue;
 
 				if (rubyBase.Length > DocumentLimits.MaxRubyBaseLength
@@ -92,13 +95,15 @@ namespace LyricsHelper {
 					continue;
 				rebuildBudget -= rebuildCost;
 
-				// Replace the w:ruby node with run *content*, not with new
-				// w:r wrappers: the ruby already lives inside its run and that
-				// run keeps its rPr, bookmarks and other children.
+				// Word expects a ruby to live in its own run. Replace the whole
+				// ruby-only run with sibling runs: plain text in one run, each
+				// ruby in another run. Do not put w:ruby and w:t in one run.
 				var replacement = new List<XElement>(segments.Count);
+				XElement? outerRunProperties = parentRun.Element(w + "rPr");
 				foreach (RubySegment segment in segments) {
+					XElement run = CreateRunShell(parentRun, w, outerRunProperties);
 					if (segment.Type == TextType.Hiragana || string.IsNullOrEmpty(segment.Ruby)) {
-						replacement.Add(CreateText(w, segment.Text));
+						run.Add(CreateText(w, segment.Text));
 					}
 					else {
 						var readingRun = new XElement(w + "r");
@@ -116,11 +121,13 @@ namespace LyricsHelper {
 							newRuby.Add(new XElement(rubyProperties));
 						newRuby.Add(new XElement(w + "rt", readingRun));
 						newRuby.Add(new XElement(w + "rubyBase", baseRun));
-						replacement.Add(newRuby);
+						run.Add(newRuby);
 					}
+
+					replacement.Add(run);
 				}
 
-				ruby.ReplaceWith(replacement.Cast<object>().ToArray());
+				parentRun.ReplaceWith(replacement.Cast<object>().ToArray());
 				modified = true;
 			}
 
@@ -135,34 +142,38 @@ namespace LyricsHelper {
 
 		/// <summary>
 		/// Removes a special-base ruby while keeping the base run properties.
-		/// When the surrounding run contains only the ruby and its rPr, the
-		/// whole run is rebuilt with the base run's formatting; otherwise the
-		/// ruby is replaced in place.
+		/// Only ruby-only runs are rebuilt; a run with other content is left
+		/// untouched so Word never sees a ruby mixed with other run content.
 		/// </summary>
-		static void ReplaceSpecialRuby(XElement ruby, XElement parentRun, XNamespace w, string baseText) {
-			var children = parentRun.Elements().ToList();
-			bool canReplaceRun = children.Count(child => child.Name == w + "ruby") == 1
-				&& children.All(child => child.Name == w + "rPr" || child.Name == w + "ruby")
-				&& parentRun.Nodes().All(node => node is XElement);
-
-			if (!canReplaceRun) {
-				ruby.ReplaceWith(CreateText(w, baseText));
-				return;
-			}
+		static bool ReplaceSpecialRuby(XElement ruby, XElement parentRun, XNamespace w, string baseText) {
+			if (!IsRubyOnlyRun(parentRun, ruby, w))
+				return false;
 
 			XElement? baseProperties = ruby.Element(w + "rubyBase")
 				?.Element(w + "r")
 				?.Element(w + "rPr")
 				?? parentRun.Element(w + "rPr");
 
-			var run = new XElement(w + "r");
-			foreach (XAttribute attribute in parentRun.Attributes())
-				run.Add(new XAttribute(attribute));
-			if (baseProperties is not null)
-				run.Add(new XElement(baseProperties));
+			XElement run = CreateRunShell(parentRun, w, baseProperties);
 			run.Add(CreateText(w, baseText));
-
 			parentRun.ReplaceWith(run);
+			return true;
+		}
+
+		static bool IsRubyOnlyRun(XElement run, XElement ruby, XNamespace w) {
+			var children = run.Elements().ToList();
+			return children.Count(child => child.Name == w + "ruby") == 1
+				&& children.All(child => child.Name == w + "rPr" || child == ruby)
+				&& run.Nodes().All(node => node is XElement);
+		}
+
+		static XElement CreateRunShell(XElement source, XNamespace w, XElement? runProperties) {
+			var run = new XElement(w + "r");
+			foreach (XAttribute attribute in source.Attributes())
+				run.Add(new XAttribute(attribute));
+			if (runProperties is not null)
+				run.Add(new XElement(runProperties));
+			return run;
 		}
 
 		static string? GetContainerText(XElement? container, XNamespace w) {

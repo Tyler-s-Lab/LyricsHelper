@@ -53,6 +53,12 @@ internal static class Program {
 		Check(xml.Contains(">守</w:t>", StringComparison.Ordinal), "cleaned base lost the kanji");
 		Check(xml.Contains(">ります</w:t>", StringComparison.Ordinal), "cleaned base lost the okurigana from the second run");
 		Check(!xml.Contains("<w:r><w:r>", StringComparison.Ordinal), "cleaning produced nested runs");
+
+		var document = System.Xml.Linq.XDocument.Parse(xml);
+		System.Xml.Linq.XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+		Check(!document.Descendants(w + "r").Any(run =>
+			run.Element(w + "ruby") is not null && run.Element(w + "t") is not null),
+			"cleaning put a ruby and text in the same run");
 	}
 
 	private static async Task ExtractionCoversNestedStructures(string root) {
