@@ -1,4 +1,4 @@
-using static LyricsHelper.CharHelper;
+﻿using static LyricsHelper.CharHelper;
 
 namespace LyricsHelper {
 	/// <summary>

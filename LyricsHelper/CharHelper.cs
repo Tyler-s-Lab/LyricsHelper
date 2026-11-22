@@ -1,4 +1,4 @@
-namespace LyricsHelper {
+﻿namespace LyricsHelper {
 	internal static class CharHelper {
 
 		public static TextType GetTextType(char c) {

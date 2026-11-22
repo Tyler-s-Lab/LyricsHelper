@@ -1,4 +1,4 @@
-namespace LyricsHelper {
+﻿namespace LyricsHelper {
 	/// <summary>
 	/// Central place for every bound applied to untrusted documents and results.
 	/// The values are deliberately generous for lyrics documents, but small
